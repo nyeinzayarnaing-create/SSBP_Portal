@@ -436,7 +436,8 @@
     dialog::backdrop { background: rgba(10, 22, 40, 0.45); }
     #otp-dialog::backdrop,
     #resubmit-dialog::backdrop,
-    #e-confirm-dialog::backdrop {
+    #e-confirm-dialog::backdrop,
+    #leave-dialog::backdrop {
       background: rgba(16, 24, 40, 0.28);
       -webkit-backdrop-filter: blur(4px);
       backdrop-filter: blur(4px);
@@ -475,11 +476,12 @@
     .ghost { background: #f2f4f7; border: 0; color: #344054; }
     .primary { background: #002C76; border: 0; color: white; }
     .primary:hover { background: #001f54; }
-    #otp-dialog, #resubmit-dialog, #e-confirm-dialog { width: min(440px, calc(100vw - 32px)); }
+    #otp-dialog, #resubmit-dialog, #e-confirm-dialog, #leave-dialog { width: min(440px, calc(100vw - 32px)); }
     .otp-body { padding: 28px 28px 24px; }
     #otp-dialog h3,
     #resubmit-dialog h3,
-    #e-confirm-dialog h3 {
+    #e-confirm-dialog h3,
+    #leave-dialog h3 {
       margin: 0 0 8px;
       font-size: 22px;
       color: #002C76;
@@ -1941,6 +1943,17 @@
     </form>
   </dialog>
 
+  <dialog id="leave-dialog">
+    <div class="otp-body">
+      <h3 id="leave-title">Are you sure you want to leave?</h3>
+      <p class="otp-copy" id="leave-copy"></p>
+      <div class="otp-actions">
+        <button class="send-btn full-btn" id="leave-ok" type="button">Leave</button>
+        <button class="text-btn full-btn" id="leave-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="resubmit-dialog">
     <form class="otp-body" id="resubmit-form">
       <h3 id="resubmit-title">Confirm resubmit</h3>
@@ -2027,7 +2040,11 @@
           profile: ["Profile", "NYEIN ZAY — Current Individual. Account number 060**********1901."]
         },
         toastOut: "Signed out of this preview.",
-        toastStart: "Application started for this preview."
+        toastStart: "Application started for this preview.",
+        leaveTitle: "Are you sure you want to leave?",
+        leaveBody: "You are in the middle of Apply, Subscribe, or Submit. If you leave, the information you entered will be cleared.",
+        leaveConfirm: "Leave",
+        leaveCancel: "Cancel"
       },
       my: {
         mainMenu: "ပင်မမီနူး",
@@ -2087,6 +2104,10 @@
           profile: ["ပရိုဖိုင်", "NYEIN ZAY — လက်ရှိ ပုဂ္ဂိုလ်။ အကောင့်နံပါတ် 060**********1901။"]
         },
         toastOut: "ဤပုံစံမှ ထွက်ပြီးပါပြီ။",
+        leaveTitle: "ထွက်ခွာရန် သေချာပါသလား။",
+        leaveBody: "လျှောက်ထားခြင်း၊ စာရင်းသွင်းခြင်း သို့မဟုတ် တင်သွင်းခြင်း လုပ်ဆောင်နေပါသည်။ ထွက်ခွာပါက ဖြည့်ထားသော အချက်အလက်များ ပယ်ဖျက်ပါမည်။",
+        leaveConfirm: "ထွက်မည်",
+        leaveCancel: "မလုပ်တော့ပါ",
         toastStart: "ဤပုံစံအတွက် လျှောက်လွှာ စတင်ပါပြီ။"
       }
     };
@@ -3585,6 +3606,18 @@
       return alerts.length === 0;
     }
 
+    function bindCancel(button, clear) {
+      if (!button) return;
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clear();
+      });
+    }
+
     function bindEForm() {
       const back = document.getElementById("e-form-back");
       if (back) {
@@ -3622,10 +3655,11 @@
           render();
         });
       });
-      document.getElementById("e-cancel").addEventListener("click", () => {
+      bindCancel(document.getElementById("e-cancel"), () => {
         state.eDraft = emptyEDraft();
         state.eAlerts = [];
         state.eFieldErrors = {};
+        state.eView = "welcome";
         render();
       });
       form.addEventListener("submit", (event) => {
@@ -5161,10 +5195,11 @@
         const count = document.getElementById("bank-remark-count");
         if (count) count.textContent = `${state.bankDraft.remark.length}/200`;
       });
-      document.getElementById("bank-cancel").addEventListener("click", () => {
+      bindCancel(document.getElementById("bank-cancel"), () => {
         state.bankDraft = emptyBankDraft();
         state.bankAlerts = [];
         state.bankFieldErrors = {};
+        state.bankView = "welcome";
         render();
       });
       form.addEventListener("submit", (event) => {
@@ -6605,10 +6640,13 @@
         const count = document.getElementById("remark-count");
         if (count) count.textContent = `${state.embassyDraft.remark.length}/200`;
       });
-      document.getElementById("embassy-cancel").addEventListener("click", () => {
+      bindCancel(document.getElementById("embassy-cancel"), () => {
         state.embassyDraft = emptyEmbassyDraft();
         state.embassyAlerts = [];
         state.embassyFieldErrors = {};
+        state.embassyNotice = "";
+        state.embassyError = "";
+        state.embassyView = "welcome";
         render();
       });
       form.addEventListener("submit", (event) => {
@@ -7295,9 +7333,27 @@
       el.classList.remove("show");
     });
 
-    document.querySelectorAll(".nav-item").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.page = btn.dataset.page;
+    function flowInProgress() {
+      const steps = ["form", "confirm", "auth", "otp"];
+      if (state.page === "bank-statement") return steps.includes(state.bankView);
+      if (state.page === "e-statement") return steps.includes(state.eView);
+      if (state.page === "embassy") return steps.includes(state.embassyView);
+      return false;
+    }
+
+    function fillLeaveDialog() {
+      const text = t();
+      document.getElementById("leave-title").textContent = text.leaveTitle;
+      document.getElementById("leave-copy").textContent = text.leaveBody;
+      document.getElementById("leave-ok").textContent = text.leaveConfirm;
+      document.getElementById("leave-cancel").textContent = text.leaveCancel;
+    }
+
+    let pendingLeavePage = "";
+    let ignoreMenuClick = false;
+
+    function openPage(page) {
+        state.page = page;
         if (state.page === "bank-statement") {
           state.bankView = "welcome";
           state.bankAlerts = [];
@@ -7341,7 +7397,23 @@
         document.getElementById("resubmit-dialog").close();
         document.getElementById("e-modify-dialog").close();
         document.getElementById("e-confirm-dialog").close();
+        const leaveDialog = document.getElementById("leave-dialog");
+        if (leaveDialog.open) leaveDialog.close();
         render();
+    }
+
+    document.querySelectorAll(".nav-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (ignoreMenuClick) return;
+        const page = btn.dataset.page;
+        if (flowInProgress()) {
+          pendingLeavePage = page;
+          fillLeaveDialog();
+          const dialog = document.getElementById("leave-dialog");
+          if (!dialog.open) dialog.showModal();
+          return;
+        }
+        openPage(page);
       });
     });
 
@@ -7352,6 +7424,7 @@
         if (document.getElementById("otp-dialog").open) fillOtpCopy();
         if (document.getElementById("e-modify-dialog").open) fillEModifyDialog();
         if (document.getElementById("e-confirm-dialog").open) fillEConfirm();
+        if (document.getElementById("leave-dialog").open) fillLeaveDialog();
         if (document.getElementById("terms-dialog").open) {
           openTerms(state.page === "bank-statement" ? bankCopy() : requestText());
         }
@@ -7494,6 +7567,40 @@
       eConfirmDialog.close();
       if (kind === "modify") applyEModify();
       if (kind === "deactivate") deactivateESchedule(reference);
+    });
+
+    const leaveDialog = document.getElementById("leave-dialog");
+    function holdMenuClicks() {
+      ignoreMenuClick = true;
+      window.setTimeout(() => {
+        ignoreMenuClick = false;
+      }, 400);
+    }
+    function dismissLeave() {
+      pendingLeavePage = "";
+      holdMenuClicks();
+      if (leaveDialog.open) leaveDialog.close();
+    }
+    document.getElementById("leave-cancel").addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissLeave();
+    });
+    document.getElementById("leave-ok").addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const page = pendingLeavePage;
+      pendingLeavePage = "";
+      holdMenuClicks();
+      if (leaveDialog.open) leaveDialog.close();
+      if (page) openPage(page);
+    });
+    leaveDialog.addEventListener("click", (event) => {
+      if (event.target === leaveDialog) dismissLeave();
+    });
+    leaveDialog.addEventListener("cancel", () => {
+      pendingLeavePage = "";
+      holdMenuClicks();
     });
 
     const resubmitDialog = document.getElementById("resubmit-dialog");
